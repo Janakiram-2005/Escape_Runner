@@ -9,14 +9,17 @@ export interface Arrow extends Point {
   isFake: boolean;
 }
 
-export interface PowerUp extends Point {
-  type: 'vision';
+export interface Coin extends Point {
   id: string;
 }
 
 export interface Trap extends Point {
   type: 'spike' | 'invert';
   phase: number;
+}
+
+export interface MysteryBox extends Point {
+  id: string;
 }
 
 export interface Level {
@@ -26,8 +29,9 @@ export interface Level {
   start: Point;
   exit: Point;
   arrows: Arrow[];
-  powerUps: PowerUp[];
+  coins: Coin[];
   traps: Trap[];
+  mysteryBoxes: MysteryBox[];
 }
 
 export function generateLevel(levelNumber: number): Level {
@@ -69,7 +73,7 @@ export function generateLevel(levelNumber: number): Level {
   const path = findShortestPath(grid, start, exit);
   
   const arrows: Arrow[] = [];
-  const powerUps: PowerUp[] = [];
+  const coins: Coin[] = [];
   
   if (path) {
     for (let i = 0; i < path.length - 1; i++) {
@@ -111,15 +115,17 @@ export function generateLevel(levelNumber: number): Level {
     }
   }
   
-  let numPowerUps = Math.min(levelNumber, 3);
+  let numCoins = levelNumber * 2 + 2;
   let attempts = 0;
-  while (numPowerUps > 0 && attempts < 100) {
+  while (numCoins > 0 && attempts < 100) {
     attempts++;
     const px = Math.floor(Math.random() * (width - 2)) + 1;
     const py = Math.floor(Math.random() * (height - 2)) + 1;
     if (grid[py][px] === 0 && (px !== start.x || py !== start.y) && (px !== exit.x || py !== exit.y)) {
-      powerUps.push({ x: px, y: py, type: 'vision', id: `pu-${numPowerUps}` });
-      numPowerUps--;
+      if (!coins.some(c => c.x === px && c.y === py)) {
+        coins.push({ x: px, y: py, id: `coin-${numCoins}` });
+        numCoins--;
+      }
     }
   }
   
@@ -131,7 +137,7 @@ export function generateLevel(levelNumber: number): Level {
     const px = Math.floor(Math.random() * (width - 2)) + 1;
     const py = Math.floor(Math.random() * (height - 2)) + 1;
     if (grid[py][px] === 0 && (px !== start.x || py !== start.y) && (px !== exit.x || py !== exit.y)) {
-      if (!powerUps.some(p => p.x === px && p.y === py) && !traps.some(t => t.x === px && t.y === py)) {
+      if (!coins.some(c => c.x === px && c.y === py) && !traps.some(t => t.x === px && t.y === py)) {
         const type = (levelNumber >= 3 && Math.random() < 0.4) ? 'invert' : 'spike';
         traps.push({ x: px, y: py, type, phase: Math.random() * Math.PI * 2 });
         numTraps--;
@@ -139,7 +145,22 @@ export function generateLevel(levelNumber: number): Level {
     }
   }
   
-  return { width, height, grid, start, exit, arrows, powerUps, traps };
+  let numBoxes = Math.max(1, Math.floor(levelNumber / 2));
+  let boxAttempts = 0;
+  const mysteryBoxes: MysteryBox[] = [];
+  while (numBoxes > 0 && boxAttempts < 100) {
+    boxAttempts++;
+    const px = Math.floor(Math.random() * (width - 2)) + 1;
+    const py = Math.floor(Math.random() * (height - 2)) + 1;
+    if (grid[py][px] === 0 && (px !== start.x || py !== start.y) && (px !== exit.x || py !== exit.y)) {
+      if (!coins.some(c => c.x === px && c.y === py) && !traps.some(t => t.x === px && t.y === py) && !mysteryBoxes.some(b => b.x === px && b.y === py)) {
+        mysteryBoxes.push({ x: px, y: py, id: `box-${numBoxes}` });
+        numBoxes--;
+      }
+    }
+  }
+  
+  return { width, height, grid, start, exit, arrows, coins, traps, mysteryBoxes };
 }
 
 function findShortestPath(grid: number[][], start: Point, exit: Point): Point[] | null {
