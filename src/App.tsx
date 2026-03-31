@@ -1,22 +1,78 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Game from './components/Game';
-import { Skull, Play, Trophy, RotateCcw, Lock, Info, Home, ChevronRight, Clock, AlertTriangle, Zap, MapPin, Eye, RefreshCcw, Settings, ShoppingCart, Coins, Compass, Search, Pause, Users } from 'lucide-react';
+import { Skull, Play, Trophy, RotateCcw, Lock, Info, Home, ChevronRight, Clock, AlertTriangle, Zap, MapPin, Eye, RefreshCcw, Settings, ShoppingCart, Coins, Compass, Search, Pause, Users, LogIn, LogOut } from 'lucide-react';
 import { SaveData, defaultSaveData } from './types';
 import { io } from 'socket.io-client';
 
 const socket = io();
 
 export default function App() {
-  const [gameState, setGameState] = useState<'menu' | 'intro' | 'levels' | 'playing' | 'level_end' | 'victory' | 'shop'>(() => {
+  const [gameState, setGameState] = useState<'menu' | 'intro' | 'levels' | 'playing' | 'level_end' | 'victory' | 'shop' | 'leaderboard'>(() => {
     const saved = localStorage.getItem('escape_runner_state');
     return (saved as any) || 'menu';
   });
+
+  const [user, setUser] = useState<any>(null);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+
+  useEffect(() => {
+    // Check auth status
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setUser(data))
+      .catch(console.error);
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      const res = await fetch('/api/auth/url');
+      const { url } = await res.json();
+      const authWindow = window.open(url, 'oauth_popup', 'width=600,height=700');
+      if (!authWindow) {
+        alert('Please allow popups to sign in with Google.');
+      }
+    } catch (error) {
+      console.error('Failed to get auth URL', error);
+    }
+  };
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        fetch('/api/auth/me')
+          .then(res => res.ok ? res.json() : null)
+          .then(data => setUser(data))
+          .catch(console.error);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const handleLogout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    setUser(null);
+  };
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await fetch('/api/leaderboard');
+      if (res.ok) {
+        setLeaderboard(await res.json());
+      }
+    } catch (error) {
+      console.error('Failed to fetch leaderboard', error);
+    }
+  };
 
   const navigate = (state: typeof gameState) => {
     if (state !== gameState) {
       window.history.pushState({ gameState: state }, '', '');
       setGameState(state);
+      if (state === 'leaderboard') {
+        fetchLeaderboard();
+      }
     }
   };
 
@@ -96,7 +152,7 @@ export default function App() {
     });
   }, []);
 
-  const handleLevelComplete = useCallback((time: number, coinsCollected: number) => {
+  const handleLevelComplete = useCallback(async (time: number, coinsCollected: number) => {
     setLevelTime(time);
     const rewardCoins = level * 10 + coinsCollected;
     setLevelCoins(rewardCoins);
@@ -108,12 +164,20 @@ export default function App() {
       unlockedLevel: nextLevel
     });
 
-    if (level === 7) {
-      setGameState('victory');
-    } else {
-      setGameState('level_end');
+    if (user) {
+      try {
+        await fetch('/api/progress', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ level: nextLevel, coins: rewardCoins })
+        });
+      } catch (error) {
+        console.error('Failed to sync progress', error);
+      }
     }
-  }, [level, saveData.coins, saveData.unlockedLevel, updateSave]);
+
+    setGameState('level_end');
+  }, [level, saveData.coins, saveData.unlockedLevel, updateSave, user]);
 
   const [editingKey, setEditingKey] = useState<keyof SaveData['controls'] | null>(null);
 
@@ -171,9 +235,25 @@ export default function App() {
             </div>
 
             <div className="absolute top-6 right-6 flex gap-4 z-20">
+              {user ? (
+                <div className="flex items-center gap-3 bg-white/10 px-4 py-2 rounded-full border border-white/20">
+                  {user.picture && <img src={user.picture} alt="Profile" className="w-6 h-6 rounded-full" />}
+                  <span className="text-sm font-bold text-white hidden sm:block">{user.name}</span>
+                  <button onClick={handleLogout} className="text-zinc-400 hover:text-white transition-colors ml-2">
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button onClick={handleLogin} className="bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full flex items-center gap-2 font-bold transition-colors text-sm border border-white/20">
+                  <LogIn className="w-4 h-4" /> Sign In
+                </button>
+              )}
               <div className="bg-amber-500/20 border border-amber-500/50 text-amber-400 px-4 py-2 rounded-full flex items-center gap-2 font-bold">
                 <Coins className="w-5 h-5" /> {saveData.coins}
               </div>
+              <button onClick={() => navigate('leaderboard')} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
+                <Trophy className="w-6 h-6 text-yellow-400" />
+              </button>
               <button onClick={() => navigate('shop')} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
                 <ShoppingCart className="w-6 h-6" />
               </button>
@@ -230,7 +310,50 @@ export default function App() {
           </motion.div>
         )}
 
-
+        {gameState === 'leaderboard' && (
+          <motion.div 
+            key="leaderboard"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.05 }}
+            className="min-h-full w-full flex flex-col items-center justify-center relative p-6 py-12"
+          >
+            <div className="z-10 max-w-2xl w-full bg-black/60 backdrop-blur-xl border border-yellow-500/30 rounded-3xl p-8 shadow-2xl">
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-3xl font-black tracking-tight text-white flex items-center gap-3"><Trophy className="text-yellow-400" /> Global Leaderboard</h2>
+                <button onClick={() => navigate('menu')} className="p-2 bg-white/5 hover:bg-white/10 rounded-full transition-colors">
+                  <Home className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-2">
+                {leaderboard.length === 0 ? (
+                  <p className="text-center text-zinc-500 py-8">No players yet. Be the first!</p>
+                ) : (
+                  leaderboard.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between bg-zinc-900/50 p-4 rounded-xl border border-white/5">
+                      <div className="flex items-center gap-4">
+                        <span className={`font-black text-xl w-8 text-center ${i === 0 ? 'text-yellow-400' : i === 1 ? 'text-zinc-300' : i === 2 ? 'text-amber-600' : 'text-zinc-600'}`}>#{i + 1}</span>
+                        {p.picture ? <img src={p.picture} alt="" className="w-10 h-10 rounded-full" /> : <div className="w-10 h-10 rounded-full bg-zinc-800" />}
+                        <span className="font-bold text-white">{p.name}</span>
+                      </div>
+                      <div className="flex items-center gap-6 text-right">
+                        <div>
+                          <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">Max Level</p>
+                          <p className="font-black text-indigo-400">{p.maxLevel}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-zinc-500 uppercase tracking-wider font-bold">Total Coins</p>
+                          <p className="font-black text-amber-400">{p.totalCoins}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {gameState === 'shop' && (
           <motion.div 
@@ -523,69 +646,6 @@ export default function App() {
             </div>
           </motion.div>
         )}
-
-        {gameState === 'victory' && (
-          <motion.div 
-            key="victory"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="min-h-full w-full flex flex-col items-center justify-center relative py-12"
-          >
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-emerald-500/20 rounded-full blur-[120px]" />
-            </div>
-
-            <div className="z-10 text-center max-w-lg px-6">
-              <motion.div 
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", bounce: 0.5, duration: 0.8 }}
-                className="mb-8 flex justify-center"
-              >
-                <div className="w-32 h-32 bg-emerald-500/10 backdrop-blur-xl border border-emerald-500/30 rounded-full flex items-center justify-center shadow-2xl shadow-emerald-500/30">
-                  <Trophy className="w-16 h-16 text-emerald-400" />
-                </div>
-              </motion.div>
-              
-              <motion.h2 
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="text-5xl md:text-6xl font-black tracking-tighter mb-6 bg-gradient-to-br from-white via-emerald-100 to-emerald-500 bg-clip-text text-transparent"
-              >
-                You Escaped!
-              </motion.h2>
-              
-              <motion.p 
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="text-lg md:text-xl text-emerald-200/80 mb-12 font-medium"
-              >
-                You successfully navigated through all 7 deceptive mazes.
-              </motion.p>
-
-              <motion.button
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-                whileHover={{ scale: 1.05, backgroundColor: "#34d399" }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => { 
-                  updateSave({ unlockedLevel: 1 });
-                  setLevel(1); 
-                  navigate('menu'); 
-                }}
-                className="bg-emerald-500 text-black px-10 py-5 rounded-full font-black text-lg flex items-center gap-3 mx-auto transition-colors shadow-[0_0_40px_rgba(16,185,129,0.3)]"
-              >
-                <RotateCcw className="w-6 h-6" />
-                PLAY AGAIN
-              </motion.button>
-            </div>
-          </motion.div>
-        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -626,6 +686,7 @@ export default function App() {
                     <label className="text-zinc-400 font-medium block mb-3">Joystick Side</label>
                     <div className="flex gap-2">
                       <button onClick={() => updateSave({ mobileLayout: { ...saveData.mobileLayout, joystickSide: 'left' } })} className={`flex-1 py-2 rounded-lg font-bold transition-colors ${saveData.mobileLayout.joystickSide === 'left' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-zinc-400 hover:bg-white/20'}`}>Left</button>
+                      <button onClick={() => updateSave({ mobileLayout: { ...saveData.mobileLayout, joystickSide: 'center' } })} className={`flex-1 py-2 rounded-lg font-bold transition-colors ${saveData.mobileLayout.joystickSide === 'center' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-zinc-400 hover:bg-white/20'}`}>Center</button>
                       <button onClick={() => updateSave({ mobileLayout: { ...saveData.mobileLayout, joystickSide: 'right' } })} className={`flex-1 py-2 rounded-lg font-bold transition-colors ${saveData.mobileLayout.joystickSide === 'right' ? 'bg-indigo-500 text-white' : 'bg-white/10 text-zinc-400 hover:bg-white/20'}`}>Right</button>
                     </div>
                   </div>

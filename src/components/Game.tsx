@@ -68,6 +68,12 @@ export default function Game({ level, saveData, onWin, onConsumePowerup, onGainP
   const actionRef = useRef({ vision: false, exit: false, clue: false, speed: false });
 
   useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.focus();
+    }
+  }, []);
+
+  useEffect(() => {
     if (!levelData) return;
     
     const canvas = canvasRef.current;
@@ -505,7 +511,11 @@ export default function Game({ level, saveData, onWin, onConsumePowerup, onGainP
   }, [levelData]);
 
   return (
-    <div ref={containerRef} className={`relative w-full h-full bg-black overflow-hidden ${(!isPaused && !showTutorial) ? 'touch-none' : ''}`}>
+    <div 
+      ref={containerRef} 
+      tabIndex={0}
+      className={`relative w-full h-full bg-black overflow-hidden focus:outline-none ${(!isPaused && !showTutorial) ? 'touch-none' : ''}`}
+    >
       <canvas ref={canvasRef} className="block w-full h-full" />
       
       <AnimatePresence>
@@ -688,8 +698,9 @@ export default function Game({ level, saveData, onWin, onConsumePowerup, onGainP
             className="absolute z-20 md:hidden"
             style={{
               bottom: `${saveData.mobileLayout?.joystickOffset ?? 10}vh`,
-              left: saveData.mobileLayout?.joystickSide === 'right' ? 'auto' : '2rem',
+              left: saveData.mobileLayout?.joystickSide === 'center' ? '50%' : saveData.mobileLayout?.joystickSide === 'right' ? 'auto' : '2rem',
               right: saveData.mobileLayout?.joystickSide === 'right' ? '2rem' : 'auto',
+              transform: saveData.mobileLayout?.joystickSide === 'center' ? 'translateX(-50%)' : 'none',
             }}
           >
             <Joystick onChange={(dx, dy) => {
@@ -711,7 +722,13 @@ export default function Game({ level, saveData, onWin, onConsumePowerup, onGainP
               >
                 <div className="my-auto bg-zinc-900 border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center flex flex-col gap-4">
                   <h2 className="text-3xl font-black text-white mb-6">Paused</h2>
-                  <button onClick={() => setIsPaused(false)} className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold py-4 rounded-xl transition-colors text-lg">
+                  <button 
+                    onClick={() => {
+                      setIsPaused(false);
+                      containerRef.current?.focus();
+                    }} 
+                    className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold py-4 rounded-xl transition-colors text-lg"
+                  >
                     Resume Game
                   </button>
                   <button onClick={onOpenSettings} className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl transition-colors text-lg">
@@ -758,7 +775,10 @@ export default function Game({ level, saveData, onWin, onConsumePowerup, onGainP
                   </div>
 
                   <button 
-                    onClick={() => setShowTutorial(false)}
+                    onClick={() => {
+                      setShowTutorial(false);
+                      containerRef.current?.focus();
+                    }}
                     className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-bold py-3 rounded-xl transition-colors"
                   >
                     I'm Ready

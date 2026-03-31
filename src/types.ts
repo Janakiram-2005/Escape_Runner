@@ -18,7 +18,7 @@ export interface SaveData {
     p4: string;
   };
   mobileLayout: {
-    joystickSide: 'left' | 'right';
+    joystickSide: 'left' | 'right' | 'center';
     joystickOffset: number;
     powerupsSide: 'center' | 'left' | 'right';
     powerupsOffset: number;

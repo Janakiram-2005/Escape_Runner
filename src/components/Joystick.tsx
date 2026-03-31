@@ -5,8 +5,8 @@ interface JoystickProps {
 }
 
 export function Joystick({ onChange }: JoystickProps) {
-  const [active, setActive] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
+  const activeRef = useRef(false);
   const baseRef = useRef<HTMLDivElement>(null);
 
   const handleMove = (clientX: number, clientY: number) => {
@@ -30,44 +30,42 @@ export function Joystick({ onChange }: JoystickProps) {
   };
 
   const handleEnd = () => {
-    setActive(false);
+    activeRef.current = false;
     setPos({ x: 0, y: 0 });
     onChange(0, 0);
   };
 
   useEffect(() => {
     const onMouseUp = () => {
-      if (active) handleEnd();
+      if (activeRef.current) handleEnd();
     };
     const onMouseMove = (e: MouseEvent) => {
-      if (active) handleMove(e.clientX, e.clientY);
+      if (activeRef.current) handleMove(e.clientX, e.clientY);
     };
     
-    if (active) {
-      window.addEventListener('mouseup', onMouseUp);
-      window.addEventListener('mousemove', onMouseMove);
-    }
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mousemove', onMouseMove);
+    
     return () => {
       window.removeEventListener('mouseup', onMouseUp);
       window.removeEventListener('mousemove', onMouseMove);
     };
-  }, [active]);
+  }, []);
 
   return (
     <div 
       ref={baseRef}
       className="w-32 h-32 rounded-full bg-white/10 border border-white/20 relative touch-none"
       onMouseDown={(e) => {
-        setActive(true);
+        activeRef.current = true;
         handleMove(e.clientX, e.clientY);
       }}
       onTouchStart={(e) => {
-        setActive(true);
+        activeRef.current = true;
         handleMove(e.touches[0].clientX, e.touches[0].clientY);
       }}
       onTouchMove={(e) => {
-        if (active) {
-          e.preventDefault();
+        if (activeRef.current) {
           handleMove(e.touches[0].clientX, e.touches[0].clientY);
         }
       }}
